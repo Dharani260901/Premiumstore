@@ -1,4 +1,0 @@
-db.users.updateOne(
-  { email: "thalapathy@gmail.com" },
-  { $set: { isAdmin: true } }
-)
