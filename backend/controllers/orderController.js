@@ -1,4 +1,6 @@
 import Order from "../models/Order.js";
+import Notification from "../models/Notification.js";
+import Counter from "../models/Counter.js";
 import { sendEmail } from "../utils/sendEmail.js";
 
 // 📧 Email templates
@@ -7,20 +9,36 @@ import { orderShippedTemplate } from "../emails/orderShipped.js";
 import { orderDeliveredTemplate } from "../emails/orderDelivered.js";
 import { orderCancelledTemplate } from "../emails/orderCancelled.js";
 
-// 📦 ETA logic (single source of truth)
+// 📦 ETA logic
 import { calculateETA } from "../utils/calculateETA.js";
 
-/* ================= GET USER ORDERS ================= */
+/* =====================================================
+   ORDER NUMBER GENERATOR
+===================================================== */
+const getNextOrderNumber = async () => {
+  const counter = await Counter.findOneAndUpdate(
+    { name: "order" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return counter.seq;
+};
+
+/* =====================================================
+   GET USER ORDERS
+===================================================== */
 export const getMyOrders = async (req, res) => {
   try {
     const orders = await Order.find({ user: req.user._id }).sort("-createdAt");
     res.json(orders);
-  } catch (error) {
+  } catch {
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
 
-/* ================= GET ORDER BY ID ================= */
+/* =====================================================
+   GET ORDER BY ID
+===================================================== */
 export const getOrderById = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).populate(
@@ -32,7 +50,6 @@ export const getOrderById = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // 🔐 Security check
     if (
       order.user._id.toString() !== req.user._id.toString() &&
       !req.user.isAdmin
@@ -41,12 +58,14 @@ export const getOrderById = async (req, res) => {
     }
 
     res.json(order);
-  } catch (error) {
+  } catch {
     res.status(500).json({ message: "Server error fetching order details" });
   }
 };
 
-/* ================= CREATE ORDER ================= */
+/* =====================================================
+   CREATE ORDER (USER)
+===================================================== */
 export const createOrder = async (req, res) => {
   try {
     const {
@@ -57,16 +76,13 @@ export const createOrder = async (req, res) => {
       shippingAddress,
     } = req.body;
 
-    /* ===== PAYMENT STATUS ===== */
-    let paymentStatus = "pending";
-    if (paymentMethod === "ONLINE") {
-      paymentStatus = "paid";
-    }
-
-    /* ===== ETA (SINGLE SOURCE OF TRUTH) ===== */
+    const paymentStatus = paymentMethod === "ONLINE" ? "paid" : "pending";
     const { etaDate, etaDays } = calculateETA(paymentMethod);
+  const orderNumber = await getNextOrderNumber();
+const displayOrderId = `ORD${orderNumber}`;
 
-    /* ===== CREATE ORDER ===== */
+
+
     const order = await Order.create({
       user: req.user._id,
       items,
@@ -75,24 +91,31 @@ export const createOrder = async (req, res) => {
       paymentStatus,
       transactionId,
       shippingAddress,
+      displayOrderId,
 
-      status: "Placed",
-      statusHistory: [{ status: "Placed", date: new Date() }],
+      status: "placed",
+      statusHistory: [{ status: "placed", date: new Date() }],
 
-      // 📦 ETA fields
       estimatedDeliveryDays: etaDays,
       estimatedDeliveryDate: etaDate,
     });
 
-    /* ===== EMAIL: ORDER PLACED ===== */
-    await sendEmail({
+    await Notification.create({
+  type: "order",
+  message: `Order #${order.displayOrderId} placed`,
+  orderId: order._id, // ✅ REQUIRED
+});
+
+
+    /* 📧 EMAIL (NON-BLOCKING) */
+    sendEmail({
       to: req.user.email,
       subject:
         paymentMethod === "COD"
           ? "Order placed – Pay on delivery"
           : "Payment successful – Order confirmed",
       html: orderPlacedTemplate(order, req.user),
-    });
+    }).catch(() => {});
 
     res.status(201).json(order);
   } catch (error) {
@@ -101,71 +124,67 @@ export const createOrder = async (req, res) => {
   }
 };
 
-/* ================= UPDATE ORDER STATUS (ADMIN) ================= */
+/* =====================================================
+   UPDATE ORDER STATUS (ADMIN)
+===================================================== */
 export const updateOrderStatus = async (req, res) => {
   try {
-    let { status } = req.body;
-
-    // Normalize
-    status = status.toLowerCase();
-
+    const status = req.body.status.toLowerCase();
     const order = await Order.findById(req.params.id).populate("user");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    const previousStatus = order.status.toLowerCase();
+    const previousStatus = order.status;
 
-    // Update status
-    order.status = status;
-    order.statusHistory.push({
-      status,
-      date: new Date(),
-    });
-
-    // 💰 COD auto-payment on delivery
-    if (status === "delivered" && order.paymentMethod === "COD") {
-      order.paymentStatus = "paid";
+    if (previousStatus === status) {
+      return res.json(order); // no change
     }
 
-    // 📅 Delivered timestamp
-    if (status === "delivered" && !order.deliveredAt) {
+    order.status = status;
+    order.statusHistory.push({ status, date: new Date() });
+
+    if (status === "delivered" && order.paymentMethod === "COD") {
+      order.paymentStatus = "paid";
       order.deliveredAt = new Date();
     }
 
     await order.save();
 
-    /* ================= EMAIL TRIGGERS ================= */
+    /* 🔔 ADMIN NOTIFICATION (ONLY ONCE) */
+    await Notification.create({
+      type: "order",
+      message: `Order #${order.displayOrderId} ${status}`,
+      orderId: order._id,
+    });
 
-    // 🚚 SHIPPED
-    if (previousStatus !== "shipped" && status === "shipped") {
-      await sendEmail({
+    /* 📧 EMAIL BASED ON STATUS */
+    if (status === "shipped") {
+      sendEmail({
         to: order.user.email,
         subject: "Your order has been shipped 🚚",
         html: orderShippedTemplate(order, order.user),
-      });
+      }).catch(() => {});
     }
 
-    // 📦 DELIVERED (ONLINE + COD)
-    if (previousStatus !== "delivered" && status === "delivered") {
-      await sendEmail({
+    if (status === "delivered") {
+      sendEmail({
         to: order.user.email,
         subject:
           order.paymentMethod === "COD"
             ? "Order delivered & payment received 🎉"
             : "Your order has been delivered 🎉",
         html: orderDeliveredTemplate(order, order.user),
-      });
+      }).catch(() => {});
     }
 
-    // ❌ CANCELLED
-    if (previousStatus !== "cancelled" && status === "cancelled") {
-      await sendEmail({
+    if (status === "cancelled") {
+      sendEmail({
         to: order.user.email,
         subject: "Your order has been cancelled",
         html: orderCancelledTemplate(order, order.user),
-      });
+      }).catch(() => {});
     }
 
     res.json(order);

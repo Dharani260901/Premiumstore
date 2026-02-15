@@ -10,6 +10,7 @@ import orderRoutes from "./routes/orderRoutes.js";
 import adminProductRoutes from "./routes/adminProductRoutes.js";
 import adminOrderRoutes from './routes/adminOrderRoutes.js';
 import userRoutes from "./routes/userRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js"
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -39,6 +40,8 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/admin/products", adminProductRoutes);
 app.use('/api/admin/orders', adminOrderRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/notifications", notificationRoutes);
+
 
 
 /* ===================== HEALTH CHECK ===================== */

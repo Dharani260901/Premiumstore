@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+/* ================= ORDER ITEM ================= */
 const orderItemSchema = new mongoose.Schema(
   {
     productId: {
@@ -23,9 +24,10 @@ const orderItemSchema = new mongoose.Schema(
       type: String,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
+/* ================= SHIPPING ADDRESS ================= */
 const shippingAddressSchema = new mongoose.Schema(
   {
     fullName: { type: String, required: true },
@@ -35,9 +37,10 @@ const shippingAddressSchema = new mongoose.Schema(
     state: { type: String, required: true },
     pincode: { type: String, required: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
+/* ================= ORDER SCHEMA ================= */
 const orderSchema = new mongoose.Schema(
   {
     user: {
@@ -67,13 +70,6 @@ const orderSchema = new mongoose.Schema(
       enum: ["pending", "paid"],
       default: "pending",
     },
-    statusHistory: [
-  {
-    status: { type: String },
-    date: { type: Date, default: Date.now }
-  }
-],
-
 
     transactionId: {
       type: String,
@@ -84,23 +80,48 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    displayOrderId: {
+      type: String,
+      unique: true,
+      required: true,
+      index: true,
+    },
 
+    /* ✅ SINGLE SOURCE OF TRUTH (LOWERCASE ENUM) */
     status: {
       type: String,
-      enum: ["Placed", "Shipped", "Delivered", "Cancelled"],
-      default: "Placed",
+      enum: ["placed", "shipped", "delivered", "cancelled"],
+      default: "placed",
     },
-    estimatedDeliveryDate: {
-  type: Date,
-  required: true,
-},
-estimatedDeliveryDays: {
-  type: Number,
-  required: true,
-},
 
+    statusHistory: [
+      {
+        status: {
+          type: String,
+          enum: ["placed", "shipped", "delivered", "cancelled"],
+        },
+        date: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+
+    deliveredAt: {
+      type: Date,
+    },
+
+    estimatedDeliveryDate: {
+      type: Date,
+      required: true,
+    },
+
+    estimatedDeliveryDays: {
+      type: Number,
+      required: true,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const Order = mongoose.model("Order", orderSchema);
