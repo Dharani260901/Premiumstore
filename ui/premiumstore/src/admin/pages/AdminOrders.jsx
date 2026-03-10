@@ -9,92 +9,124 @@ export default function AdminOrders() {
   const [filter, setFilter] = useState("All");
   const [paymentFilter, setPaymentFilter] = useState("All");
 
+  /* ================= FETCH ORDERS ================= */
   useEffect(() => {
     if (!admin?.token) return;
 
-    axios
-      .get("http://localhost:5000/api/admin/orders", {
-        headers: {
-          Authorization: `Bearer ${admin.token}`
-        }
-      })
-      .then((res) => {
-        setOrders(res.data);
+    const fetchOrders = async () => {
+      try {
+        const res = await axios.get(
+          "http://localhost:5000/api/admin/orders",
+          {
+            headers: {
+              Authorization: `Bearer ${admin.token}`,
+            },
+          }
+        );
+
+        setOrders(res.data || []);
+      } catch (err) {
+        console.error("Failed to load orders:", err);
+      } finally {
         setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      }
+    };
+
+    fetchOrders();
   }, [admin?.token]);
 
+  /* ================= UPDATE STATUS ================= */
   const updateStatus = async (id, status) => {
-    // 1️⃣ Optimistic UI update (instant)
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o._id.toString() !== id.toString()) return o;
 
-        const updated = { ...o, status };
+  if (!id || !status) return;
 
-        // COD → Delivered → Paid
-        if (o.paymentMethod === "COD" && status === "Delivered") {
-          updated.paymentStatus = "paid";
-        }
+  const previousOrders = orders;
 
-        return updated;
-      })
+  // optimistic UI update
+  setOrders(prev =>
+    prev.map(o => {
+
+      if (String(o._id) !== String(id)) return o;
+
+      const updated = { ...o, status };
+
+      if (o.paymentMethod === "COD" && status === "delivered") {
+        updated.paymentStatus = "paid";
+      }
+
+      return updated;
+
+    })
+  );
+
+  try {
+
+    const res = await axios.put(
+      `http://localhost:5000/api/admin/orders/${id}/status`,
+      { status },
+      {
+        headers: {
+          Authorization: `Bearer ${admin.token}`,
+        },
+      }
     );
 
-    try {
-      // 2️⃣ Sync with backend
-      const { data: updatedOrder } = await axios.put(
-        `http://localhost:5000/api/admin/orders/${id}/status`,
-        { status },
-        {
-          headers: {
-            Authorization: `Bearer ${admin.token}`,
-          },
-        }
-      );
+    const updatedOrder = res.data;
 
-      // 3️⃣ Replace with server truth
-      setOrders((prev) =>
-        prev.map((o) =>
-          o._id.toString() === updatedOrder._id.toString()
-            ? updatedOrder
-            : o
-        )
-      );
-    } catch (err) {
-      console.error(err);
-      alert("Failed to update order status");
-      
-      // Revert optimistic update on error
-      setOrders((prev) =>
-        prev.map((o) => {
-          if (o._id.toString() !== id.toString()) return o;
-          // Find original order to revert to
-          const original = orders.find(ord => ord._id.toString() === id.toString());
-          return original || o;
-        })
-      );
-    }
-  };
+    setOrders(prev =>
+      prev.map(o =>
+        String(o._id) === String(updatedOrder._id)
+          ? updatedOrder
+          : o
+      )
+    );
 
-  const formatDate = (date) =>
-    new Date(date).toLocaleDateString("en-IN", {
+  } catch (err) {
+
+    console.error("Status update failed:", err?.response?.data || err);
+
+    // revert UI
+    setOrders(previousOrders);
+
+    alert(
+      err?.response?.data?.message ||
+      "Failed to update order status"
+    );
+
+  }
+};
+
+  /* ================= DATE FORMAT ================= */
+  const formatDate = (date) => {
+    if (!date) return "-";
+
+    return new Date(date).toLocaleDateString("en-IN", {
       day: "numeric",
       month: "short",
       year: "numeric",
     });
+  };
 
+  /* ================= LATE ORDER ================= */
   const isLate = (order) => {
-    if (!order.estimatedDeliveryDate) return false;
-    if (order.status === "Delivered") return false;
+
+    if (!order?.estimatedDeliveryDate) return false;
+    if (order?.status === "delivered") return false;
+
     return new Date() > new Date(order.estimatedDeliveryDate);
   };
 
-  // Apply both filters
+  /* ================= FILTER ORDERS ================= */
   const filteredOrders = orders.filter((o) => {
-    const statusMatch = filter === "All" || o.status.toLowerCase() === filter.toLowerCase();
-    const paymentMatch = paymentFilter === "All" || o.paymentMethod === paymentFilter;
+
+    const statusMatch =
+  filter === "All" ||
+  o.status === filter.toLowerCase();
+
+    const paymentMatch =
+      paymentFilter === "All" ||
+      o?.paymentMethod === paymentFilter;
+
     return statusMatch && paymentMatch;
   });
 
@@ -247,7 +279,7 @@ function OrderCard({ order, onUpdateStatus, formatDate, isLate }) {
       {/* Order Header */}
       <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
         <div className="flex flex-wrap justify-between items-center gap-4">
-          <OrderInfo label="Order ID" value={`#${order._id.slice(-8).toUpperCase()}`} mono />
+          <OrderInfo label="Order ID" value={`#${order._id.toString().slice(-8).toUpperCase()}`} mono />
           <OrderInfo 
             label="Date" 
             value={formatDate(order.createdAt)}
@@ -356,16 +388,20 @@ function OrderCard({ order, onUpdateStatus, formatDate, isLate }) {
         {/* Order Status */}
         <div className="flex items-center justify-between pt-4 border-t border-slate-100">
           <p className="text-sm text-gray-600">Update Order Status:</p>
-          <select
-            value={String(order.status)}
-            onChange={(e) => onUpdateStatus(order._id.toString(), e.target.value)}
-            className="px-4 py-2.5 bg-white border border-slate-200 focus:border-amber-700 focus:outline-none text-sm transition-colors cursor-pointer"
-          >
-            <option value="Placed">Placed</option>
-            <option value="Shipped">Shipped</option>
-            <option value="Delivered">Delivered</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
+         <select
+  key={order.status}
+  value={order.status}
+  onChange={(e) =>
+    onUpdateStatus(order._id.toString(), e.target.value)
+  }
+  className="px-4 py-2.5 bg-white border border-slate-200 focus:border-amber-700 focus:outline-none text-sm transition-colors cursor-pointer"
+>
+  <option value="placed">Placed</option>
+  <option value="shipped">Shipped</option>
+  <option value="delivered">Delivered</option>
+  <option value="cancelled">Cancelled</option>
+</select>
+         
         </div>
       </div>
     </div>

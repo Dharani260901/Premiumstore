@@ -29,19 +29,24 @@ export function AuthProvider({ children }) {
      LOGIN
   ===================================================== */
   const login = async (email, password) => {
-    const res = await fetch(`${API}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+  const res = await fetch(`${API}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Login failed");
+  const data = await res.json();
 
-    setUser(data);
-    localStorage.setItem("user", JSON.stringify(data));
-    return data;
-  };
+  if (!res.ok) {
+    console.error("Login failed:", data.message);
+    throw new Error(data.message || "Login failed");
+  }
+
+  setUser(data);
+  localStorage.setItem("user", JSON.stringify(data));
+
+  return data;
+};
 
   /* =====================================================
      REGISTER

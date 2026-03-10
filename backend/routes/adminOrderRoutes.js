@@ -2,22 +2,24 @@ import express from "express";
 import {
   getAllOrders,
   updateOrderStatus,
-  deleteOrder
+  deleteOrder,
 } from "../controllers/adminOrderController.js";
+
 import { protect } from "../middleware/authMiddleware.js";
 import { adminOnly } from "../middleware/adminMiddleware.js";
 
 const router = express.Router();
 
+/* ===== PROTECT ALL ADMIN ORDER ROUTES ===== */
 router.use(protect, adminOnly);
 
-// ADMIN gets all orders
+/* ================= GET ALL ORDERS ================= */
 router.get("/", getAllOrders);
 
-// ADMIN updates status
+/* ================= UPDATE ORDER STATUS ================= */
 router.put("/:id/status", updateOrderStatus);
 
-// ADMIN deletes order (optional)
+/* ================= DELETE ORDER ================= */
 router.delete("/:id", deleteOrder);
 
 export default router;

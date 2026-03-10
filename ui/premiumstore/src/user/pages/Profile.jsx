@@ -6,7 +6,7 @@ import AddressForm from "../components/AddressForm";
 const API = "http://localhost:5000/api";
 
 export default function Profile() {
-  const { user, logout, updateUser } = useAuth();
+  const { user, logout, updateUser, authLoading } = useAuth(); // ✅ added authLoading
   const [addresses, setAddresses] = useState([]);
   const [showForm, setShowForm] = useState(false);
 
@@ -23,6 +23,7 @@ export default function Profile() {
 
   /* ================= LOAD PROFILE ================= */
   useEffect(() => {
+    if (authLoading) return; // ✅ wait until auth finishes
     if (!user?.token) return;
 
     axios
@@ -39,7 +40,7 @@ export default function Profile() {
         });
       })
       .catch(console.error);
-  }, [user?.token]);
+  }, [user?.token, authLoading]);
 
   /* ================= IMAGE PREVIEW ================= */
   useEffect(() => {
@@ -61,14 +62,12 @@ export default function Profile() {
     setLoading(true);
 
     try {
-      // 1️⃣ Update profile text fields
       await axios.put(`${API}/users/profile`, formData, {
         headers: { Authorization: `Bearer ${user.token}` },
       });
 
       let profileImage = user.profileImage;
 
-      // 2️⃣ Upload profile image
       if (image) {
         const imgData = new FormData();
         imgData.append("image", image);
@@ -80,14 +79,12 @@ export default function Profile() {
         profileImage = imgRes.data.profileImage;
       }
 
-      // 3️⃣ Update AuthContext
       updateUser({
         name: formData.name,
         email: formData.email,
         profileImage,
       });
 
-      // 4️⃣ Success animation
       setLoading(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -115,25 +112,18 @@ export default function Profile() {
     }
   };
 
-   const addAddress = async (data) => {
-    const res = await axios.post(
-      `${API}/users/addresses`,
-      data,
-      {
-        headers: { Authorization: `Bearer ${user.token}` },
-      }
-    );
+  const addAddress = async (data) => {
+    const res = await axios.post(`${API}/users/addresses`, data, {
+      headers: { Authorization: `Bearer ${user.token}` },
+    });
     setAddresses(res.data);
     setShowForm(false);
   };
 
   const deleteAddress = async (id) => {
-    const res = await axios.delete(
-      `${API}/users/addresses/${id}`,
-      {
-        headers: { Authorization: `Bearer ${user.token}` },
-      }
-    );
+    const res = await axios.delete(`${API}/users/addresses/${id}`, {
+      headers: { Authorization: `Bearer ${user.token}` },
+    });
     setAddresses(res.data);
   };
 
@@ -148,19 +138,26 @@ export default function Profile() {
     setAddresses(res.data);
   };
 
-
   /* ================= LOAD ADDRESSES ================= */
-useEffect(() => {
-  if (!user?.token) return;
+  useEffect(() => {
+    if (authLoading) return; // ✅ wait for auth
+    if (!user?.token) return;
 
-  axios
-    .get(`${API}/users/addresses`, {
-      headers: { Authorization: `Bearer ${user.token}` },
-    })
-    .then((res) => setAddresses(res.data))
-    .catch(console.error);
-}, [user?.token]);
+    axios
+      .get(`${API}/users/addresses`, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      })
+      .then((res) => setAddresses(res.data))
+      .catch(console.error);
+  }, [user?.token, authLoading]);
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Loading profile...
+      </div>
+    );
+  }
   return (
     <div className="bg-white min-h-screen py-16">
       <div className="max-w-2xl mx-auto px-6">

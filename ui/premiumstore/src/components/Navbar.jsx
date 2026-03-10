@@ -1,11 +1,13 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useSearch } from "../context/SearchContext";
 import { useCart } from "../context/CartContext";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Navbar() {
   const { query, setQuery } = useSearch();
   const { cartCount } = useCart(); // ✅ NUMBER
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const handleSearch = (e) => {
     setQuery(e.target.value);
@@ -41,6 +43,17 @@ export default function Navbar() {
             </span>
           )}
         </Link>
+
+         {/* LOGIN / PROFILE */}
+          {!user ? (
+            <Link to="/login" className="text-sm font-medium hover:text-orange-500">
+              Sign In
+            </Link>
+          ) : (
+            <Link to="/profile" className="text-sm font-medium hover:text-orange-500">
+              My Account
+            </Link>
+          )}
 
       </div>
     </header>
